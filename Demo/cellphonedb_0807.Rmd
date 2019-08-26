@@ -1,0 +1,181 @@
+---
+title: "cellphonedb_0805"
+author: "Changhua Yu"
+date: "8/5/2019"
+output: html_document
+---
+## separate ctrl and stim (WT and KI) condition and run cellphonedb respectively
+
+```{r}
+source('cellphone_util.R')
+source('cellphone_dotplot.R')
+source('cellphone_heat.R')
+library("stringr")
+```
+
+```{r}
+seurat.out.pos = readRDS('./Shiny_diff_0808/input/WTKICD45POS_out.rds')
+seurat.out.pos = seurat.out.pos$ob
+
+count.pos = Output.Count(seurat.out.pos,filt = seq(0,20),multi = c("kii","kini","wni","wti"))
+
+meta.pos = Output.Meta(seurat.out.pos,filt = seq(0,20),annotations = c("B","T","neutrophil","B","macrophage","T","T","NCMC","macrophage","T","NK","DC","DC","ILC2","Proliferation","neutrophil","micropglia","macrophage","NCMC","macrophage","macrophage"), multi = c("kii","kini","wni","wti"))
+
+```
+
+```{r}
+seurat.out.neg = readRDS('./Shiny_diff_0808/input/WTKICD45NEG_out.rds')
+seurat.out.neg = seurat.out.neg$ob
+
+count.neg = Output.Count(seurat.out.neg,filt = seq(0,16),multi = c("kii","kini","wni","wti"))
+
+meta.neg = Output.Meta(seurat.out.neg,filt = seq(0,16),annotations = c("endothelial","endothelial","endothelial","epithelial","pericyte","fibroblast","fibroblast","endothelial","endothelial","endothelial","epithelial","epithelial","fibroblast","epi_endo","endothelial","pericyte","fibroblast"), multi = c("kii","kini","wni","wti"))
+
+```
+
+
+```{r}
+multi = c("kii","kini","wni","wti")
+for (i in 1:length(multi)) {
+  print(multi[i])
+  
+  count.neg.ctrl = count.neg[[i]]
+  count.pos.ctrl = count.pos[[i]]
+  meta.neg.ctrl = meta.neg[[i]]
+  meta.pos.ctrl = meta.pos[[i]]
+  
+  colnames(count.neg.ctrl)  = paste0("n-",colnames(count.neg.ctrl))
+  colnames(count.pos.ctrl)  = paste0("p-",colnames(count.pos.ctrl))
+  meta.neg.ctrl$Cell = paste0("n-",meta.neg.ctrl$Cell)
+  meta.pos.ctrl$Cell = paste0("p-",meta.pos.ctrl$Cell)
+  count.combined.ctrl = merge(count.neg.ctrl,count.pos.ctrl,by.x = "n-Gene",by.y = "p-Gene",all = T)
+  meta.combined.ctrl = rbind(meta.neg.ctrl,meta.pos.ctrl)
+  count.combined.ctrl[is.na(count.combined.ctrl)] = 0
+  
+  count.path = paste0('../../MAP3K3/data/',"count_",multi[i],".txt")
+  meta.path = paste0('../../MAP3K3/data/',"meta_",multi[i],".txt")
+  
+  write.table(count.combined.ctrl,file = count.path, sep='\t', quote=F,row.names = F)
+  write.table(meta.combined.ctrl,file = meta.path,row.names = F,sep='\t', quote=F)
+}
+
+```
+
+
+```{r}
+means_path = paste0('../../MAP3K3/output/cellphone/190808/',c("kii","kini","wni","wti"),'/out/means.txt')
+pvalues_path = paste0('../../MAP3K3/output/cellphone/190808/', c("kii","kini","wni","wti"),'/out/pvalues.txt')
+sig_path = paste0('../../MAP3K3/output/cellphone/190808/', c("kii","kini","wni","wti"),'/out/significant_means.txt')
+meta_path = paste0('../../MAP3K3/output/cellphone/190808/',c("kii","kini","wni","wti"),'/meta_',c("kii","kini","wni","wti"),'.txt')
+
+means = lapply(1:4, function(x) read.table(file = means_path[x],sep = '\t',header = T))
+pvalues = lapply(1:4, function(x) read.table(file = pvalues_path[x],sep = '\t',header = T))
+significant_means = lapply(1:4, function(x) read.table(file = sig_path[x],sep = '\t',header = T))
+```
+
+```{r}
+
+significant_means = significant_means[seq(nrow(significant_means)-20,nrow(significant_means)),]
+column.na = sapply(significant_means[,13:ncol(significant_means)], function(x) all(is.na(x)))
+row.na = apply(significant_means[,13:ncol(significant_means)],MARGIN = 1, function(x) all(is.na(x)))
+sig.mean.filtered = significant_means[row.na == F,]
+# remove collagen related
+sig.mean.filtered = sig.mean.filtered[!str_detect(sig.mean.filtered$interacting_pair,"^COL"),]
+
+```
+
+## Plot Heatmap
+```{r}
+lapply(1:4, function(x)
+heatmaps_plot(meta_file = meta_path[x],
+  pvalues_file = pvalues_path[x] ,
+  count_filename = paste0(multi[x],'heatmap_count.pdf'),
+  log_filename = paste0(multi[x],'heatmap_log.pdf'),
+  show_rownames = T,
+  show_colnames = T,
+  scale="none",
+  cluster_cols = F,
+  border_color='white',
+  cluster_rows = F,
+  fontsize_row=11,
+  fontsize_col = 11,
+  main = '',
+  treeheight_row=0,
+  family='Arial',
+  treeheight_col = 0,
+  col1 = "dodgerblue4",
+  col2 = 'peachpuff',
+  col3 = 'deeppink4',
+  meta_sep='\t',
+  pvalues_sep='\t',
+  pvalue=0.05)
+)
+
+
+```
+
+
+## export cytoscape network and node table for network visualization
+```{r}
+lapply(1:4, function(x) 
+  Output.Cytoscape(meta_file = meta_path[x],
+  pvalues_file = pvalues_path[x],
+  meta_sep='\t',
+  pvalues_sep='\t',
+  pvalue=0.05,
+  network_filename = paste0(multi[x],'network.txt'),
+  intr_filename = paste0(multi[x],'intrsum.txt'))
+)
+
+```
+
+
+## Filter to keep the cell type pair of interests
+
+```{r}
+colnames(significant_means[[1]])[13:ncol(significant_means[[1]])]
+
+significant_means = lapply(1:4, function(x) significant_means[[x]][!str_detect(significant_means[[x]]$interacting_pair,"^COL"),])
+
+
+type.a = c("Proliferation","Proliferation","micropglia","micropglia","epi_endo","epi_endo","endothelial","endothelial","endothelial","T","NK","fibroblast","DC")
+
+type.b = c("NCMC","ILC2","ILC2","epi_endo","epithelial","T","T","DC","NCMC","epithelial","NK","pericyte","T")
+
+pair.fwd = paste(type.a,type.b,sep = ".")
+pair.rev = paste(type.b,type.a,sep = ".")
+
+significant_means.sel = lapply(1:4, function(x) significant_means[[x]][,c("interacting_pair",pair.fwd,pair.rev)])
+names(significant_means.sel) = multi
+
+
+
+merge.Helper = function(i){
+  temp = lapply(1:length(significant_means.sel),function(x) significant_means.sel[[x]][,c(1,i)]) 
+  temp.merged = temp %>% reduce(full_join, by = "interacting_pair")
+  ret = Filter.NA.ROW(temp.merged) 
+  colnames(ret) = c("interacting_pair",multi)
+  ret[is.na(ret)] = 0
+  return(ret)
+}
+
+merged.intr = lapply(2:ncol(significant_means.sel[[1]]), function(i) merge.Helper(i))
+
+names(merged.intr) = c(pair.fwd,pair.rev)
+
+merged.intr[[1]]
+
+```
+
+
+## Output Dotplot for the selected pairs
+```{r}
+pair.fwd = paste(type.a,type.b,sep = "-")
+pair.rev = paste(type.b,type.a,sep = "-")
+names(merged.intr) = c(pair.fwd,pair.rev)
+plots = lapply(1:26, function(x) pheatmap(column_to_rownames(remove_rownames(merged.intr[[x]]),var = "interacting_pair"),main = names(merged.intr)[x],fontsize_row = 5,filename = paste0('../../MAP3K3/output/cellphone/190808/plots/',names(merged.intr)[x],".pdf")))
+
+```
+
+
+

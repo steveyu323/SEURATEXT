@@ -1,0 +1,150 @@
+---
+title: "cytometry_reclustering"
+author: "Changhua Yu"
+date: "8/16/2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+```{r message=FALSE,warning=FALSE}
+library(dplyr)
+library(Seurat)
+library(purrr)
+library(cowplot)
+library(parallel)
+library(roxygen2)
+library(reshape2)
+library(tibble)
+library(ggplot2)
+source('../R/cell_cytometry.R')
+source("../R/DE_analysis.R")
+```
+
+### Read in the Count matrix
+```{r}
+path1 = "../data/KO0531/"
+path2 = "../data/WT0531/"
+ko.mat = Read10X(data.dir = path1)
+wt.mat = Read10X(data.dir = path2)
+
+ctrl = CreateSeuratObject(counts = wt.mat, project = 'CTRL', min.cells = 3, min.features = 200)
+stim = CreateSeuratObject(counts = ko.mat, project = 'STIM', min.cells = 3, min.features = 200)
+```
+
+### Mitochondria Percentage calculation and assigning conditions to "stim" field
+```{r}
+ctrl$stim = "CTRL"
+ctrl[["percent.mt"]] <- PercentageFeatureSet(ctrl, pattern = "^MT-|^mt")
+stim$stim = "STIM"
+stim[["percent.mt"]] <- PercentageFeatureSet(stim, pattern = "^MT-|^mt")
+```
+
+### Plot out mitochondria percent distribution
+```{r}
+plot1 <- FeatureScatter(ctrl, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(stim, feature1 = "nCount_RNA", feature2 = "percent.mt")
+CombinePlots(plots = list(plot1, plot2))
+```
+
+### Plot out nFeature distribution
+```{r}
+plot1 <- FeatureScatter(ctrl, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot2 <- FeatureScatter(stim, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+CombinePlots(plots = list(plot1, plot2))
+```
+
+### Filter out abnormal cells
+> Based on the mt percent distribution and nFeature distribution
+
+```{r}
+ctrl <- subset(ctrl, subset = nFeature_RNA > 500 & nFeature_RNA < 6000 & percent.mt < 25)
+print(ctrl)
+
+stim <- subset(stim, subset = nFeature_RNA > 500 & nFeature_RNA < 6000 & percent.mt < 25)
+print(stim)
+```
+
+### Normalize Data and find variable features
+```{r}
+ctrl <- NormalizeData(ctrl, normalization.method = "LogNormalize", scale.factor = 10000)
+ctrl <- FindVariableFeatures(ctrl, selection.method = "vst", nfeatures = 2500)
+
+stim <- NormalizeData(stim, normalization.method = "LogNormalize", scale.factor = 10000)
+stim <- FindVariableFeatures(stim, selection.method = "vst", nfeatures = 2500)
+```
+
+### Integrate two sample together
+```{r}
+immune.anchors <- FindIntegrationAnchors(object.list = list(ctrl, stim))
+immune.combined <- IntegrateData(anchorset = immune.anchors)
+```
+
+
+### Save data for future usage
+```{r eval=FALSE}
+save(ctrl, stim,immune.combined, file="../data/CD45POS.RData")
+```
+
+
+### Proceed the anchored clustering 
+```{r}
+load("../data/CD45POS.RData")
+DefaultAssay(immune.combined) <- "integrated"
+# Run the standard workflow for visualization and clustering
+immune.combined <- ScaleData(immune.combined, verbose = FALSE)
+immune.combined <- RunPCA(immune.combined, npcs = 30, verbose = FALSE)
+# t-SNE and Clustering
+immune.combined <- RunUMAP(immune.combined, reduction = "pca",dims = 1:15)
+immune.combined <- FindNeighbors(immune.combined, reduction = "pca",dims = 1:15)
+immune.combined <- FindClusters(immune.combined, resolution = 0.6)
+```
+
+
+# Visualizing UMAP clustering
+```{r}
+p1 <- DimPlot(immune.combined, reduction = "umap", group.by = "stim")
+p2 <- DimPlot(immune.combined, reduction = "umap", label = TRUE)
+plot_grid(p1, p2)
+DimPlot(immune.combined, reduction = "umap", split.by = "stim",label = T)
+```
+
+### Create a Cytometry object with the given markers and threshold on markers
+
+```{r}
+immune.combined.cyto.cd68 = Build.Cyto(immune.combined,"Cd3e","Cd68",x.thresh = 0.1,y.thresh = 0.1)
+Plot.Cyto.Count(seurat.ob = immune.combined.cyto.cd68,
+                x= "Cd3e",
+                y = "Cd68",split = T)
+```
+
+### Plot out the clusters mapping back to the UMAP clustering plot
+```{r}
+p = Plot.Cyto.Cluster(seurat.ob = immune.combined.cyto.cd68,
+                      x= "Cd3e",
+                      y = "Cd68",split = T)
+plot_grid(p$ctrl,p$stim,labels = c('CTRL','STIM'))
+```
+
+
+### Extracting out the cd3e positive T cells (the second qudrant)
+```{r}
+Tcell = Recluster.Quadrant(immune.combined.cyto.cd68,n.quadrant = 2)
+```
+
+### perform the reclustering on T Cell object
+```{r}
+DefaultAssay(Tcell) <- "integrated"
+Tcell <- RunPCA(Tcell, npcs = 30, verbose = FALSE)
+# t-SNE and Clustering
+Tcell <- RunUMAP(Tcell, reduction = "pca",dims = 1:15)
+Tcell <- FindNeighbors(Tcell, reduction = "pca",dims = 1:15)
+Tcell <- FindClusters(Tcell, resolution = 0.6)
+```
+
+### Inspect on the reclusted T cell populations
+```{r}
+DimPlot(Tcell, reduction = "umap", split.by = "stim",label = T)
+```
+

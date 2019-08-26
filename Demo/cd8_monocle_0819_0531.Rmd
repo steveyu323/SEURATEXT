@@ -1,0 +1,194 @@
+---
+title: "ryk_monocle_cd8"
+author: "Changhua Yu"
+date: "8/19/2019"
+output: html_document
+---
+
+```{r}
+library(monocle)
+library(shiny)
+library(dplyr)
+library(Seurat)
+library(purrr)
+library(cowplot)
+library(parallel)
+library(reshape2)
+library(DT)
+```
+
+```{r}
+cd8.out = readRDS("./Shiny_diff/input/cd8_out.rds")
+cd8.ob = cd8.out$ob
+cd8.diff = cd8.out$diff
+cd8.conserved = cd8.out$conserved.markers
+
+DE.genes = union(cd8.out$ctrl.markers$gene,cd8.out$stim.markers$gene)
+conserved.genes = cd8.conserved$rowname
+variance.genes = row.names(cd8.ob@assays$integrated@data)
+
+cd8.mat = cd8.ob@assays$RNA@counts
+
+pd = cbind(stim = cd8.ob$stim, cluster = cd8.ob$seurat_clusters)
+
+fd = tibble(gene_short_name = row.names(cd8.mat))
+fd = as.matrix(fd)
+row.names(fd) = row.names(cd8.mat)
+
+pd <- new("AnnotatedDataFrame", data = as.data.frame(pd) )
+pd
+fd <- new("AnnotatedDataFrame", data = as.data.frame(fd) )
+fd
+
+
+HSMM <- newCellDataSet(as.matrix(cd8.mat), phenoData = pd, featureData = fd,expressionFamily=negbinomial.size())
+
+HSMM <- estimateSizeFactors(HSMM) 
+HSMM <- estimateDispersions(HSMM)
+HSMM$cluster = as.numeric(HSMM$cluster) - 1
+HSMM$cluster = as.factor(HSMM$cluster)
+```
+
+
+
+```{r}
+HSMM_myo <- setOrderingFilter(HSMM, DE.genes)
+#plot_ordering_genes(HSMM_myo) 
+HSMM_myo <- reduceDimension(HSMM_myo, max_components=2, method = 'DDRTree', norm_method = 'log') 
+HSMM_myo <- orderCells(HSMM_myo) 
+
+
+plot_cell_trajectory(HSMM_myo, color_by="cluster") + theme(legend.position="right")
+
+plot_cell_trajectory(HSMM_myo, color_by="Pseudotime") + theme(legend.position="right")
+
+plot_cell_trajectory(HSMM_myo, color_by="State") + facet_wrap(~State, nrow=1)
+
+plot_cell_trajectory(HSMM_myo, color_by="State") + facet_wrap(~cluster, nrow=1)
+
+plot_cell_trajectory(HSMM_myo, color_by="cluster") + facet_wrap(~stim, nrow=1)
+
+```
+
+
+
+```{r}
+#fData(HSMM_myo) %>% filter(gene_short_name == "Lef1")
+HSMM_filtered <- HSMM_myo[DE.genes,]
+my_genes <- row.names(subset(fData(HSMM_filtered), gene_short_name %in% c("Lef1",  "Lag3")))
+cds_subset <- HSMM_filtered[my_genes,]
+plot_genes_branched_pseudotime(cds_subset, branch_point=1, color_by="cluster", ncol=1) 
+```
+
+
+
+```{r}
+blast_genes <- row.names(subset(fData(HSMM_myo), gene_short_name %in% c("Lag3", "Lef1", "Eomes"))) 
+
+plot_genes_jitter(HSMM_myo[blast_genes,], grouping="cluster", min_expr=0.1)
+
+```
+
+## Semi-Supervised with Tcf7 and Lag3 markers
+```{r}
+CCNB2_id <- row.names(subset(fData(HSMM_myo), gene_short_name == "Tcf7")) 
+MYH3_id <- row.names(subset(fData(HSMM_myo), gene_short_name == "Lag3"))
+
+
+cth <- newCellTypeHierarchy() 
+cth <- addCellType(cth, "Naive", classify_func=function(x) {x[CCNB2_id,] >= 1}) 
+
+cth <- addCellType(cth, "Exhausted", classify_func=function(x) {x[MYH3_id,] >=1}) 
+cth <- addCellType(cth, "unknown", classify_func=function(x) {x[MYH3_id,] == 0 & x[CCNB2_id,] == 0}) 
+
+HSMM_myo <- classifyCells(HSMM_myo, cth)
+
+
+
+marker_diff <- markerDiffTable(HSMM_myo[variance.genes,], cth, cores=detectCores()) 
+
+semisup_clustering_genes <- row.names(marker_diff)[order(marker_diff$qval)][1:1000]
+
+```
+
+
+```{r}
+HSMM_myo <- setOrderingFilter(HSMM, semisup_clustering_genes)
+#plot_ordering_genes(HSMM_myo) 
+HSMM_myo <- reduceDimension(HSMM_myo, max_components=2, method = 'DDRTree', norm_method = 'log') 
+HSMM_myo <- orderCells(HSMM_myo) 
+
+
+plot_cell_trajectory(HSMM_myo, color_by="cluster") + theme(legend.position="right")
+
+plot_cell_trajectory(HSMM_myo, color_by="Pseudotime") + theme(legend.position="right")
+
+plot_cell_trajectory(HSMM_myo, color_by="State") + facet_wrap(~State, nrow=1)
+
+plot_cell_trajectory(HSMM_myo, color_by="State") + facet_wrap(~cluster, nrow=1)
+
+plot_cell_trajectory(HSMM_myo, color_by="cluster") + facet_wrap(~stim, nrow=1)
+
+```
+
+```{r}
+#fData(HSMM_myo) %>% filter(gene_short_name == "Lef1")
+HSMM_filtered <- HSMM_myo[semisup_clustering_genes,]
+my_genes <- row.names(subset(fData(HSMM_filtered), gene_short_name %in% c("Lef1",  "Lag3")))
+cds_subset <- HSMM_filtered[my_genes,]
+plot_genes_branched_pseudotime(cds_subset, branch_point=1, color_by="cluster", ncol=1) 
+```
+```{r}
+blast_genes <- row.names(subset(fData(HSMM_myo), gene_short_name %in% c("Lag3", "Lef1", "Eomes"))) 
+
+plot_genes_jitter(HSMM_myo[blast_genes,], grouping="State", min_expr=0.1)
+
+```
+
+
+
+## Unsupervised Selection of Genes
+```{r}
+HSMM_myo <- detectGenes(HSMM, min_expr=0.1) 
+fData(HSMM_myo)$use_for_ordering <- fData(HSMM_myo)$num_cells_expressed > 0.05 * ncol(HSMM_myo)
+plot_pc_variance_explained(HSMM_myo, return_all = F) #look at the plot and decide how many dimensions you need. It is determined by a huge drop of variance at that dimension. pass that number to num_dim in the next function.
+
+HSMM_myo <- reduceDimension(HSMM_myo, max_components=2, norm_method = 'log', num_dim = 3, reduction_method = 'tSNE', verbose = T)
+HSMM_myo <- clusterCells(HSMM_myo, verbose = F)
+plot_cell_clusters(HSMM_myo, color_by = 'as.factor(Cluster)') 
+plot_cell_clusters(HSMM_myo, color_by = 'as.factor(cluster)') 
+plot_rho_delta(HSMM_myo, rho_threshold = 2, delta_threshold = 4 )
+HSMM_myo <- clusterCells(HSMM_myo, rho_threshold = 10, delta_threshold = 10, skip_rho_sigma = T, verbose = F)
+plot_cell_clusters(HSMM_myo, color_by = 'as.factor(Cluster)') 
+plot_cell_clusters(HSMM_myo, color_by = 'as.factor(cluster)') 
+```
+
+```{r}
+clustering_DEG_genes <- differentialGeneTest(HSMM_myo, fullModelFormulaStr = '~Cluster', cores = detectCores())
+HSMM_ordering_genes <- row.names(clustering_DEG_genes)[order(clustering_DEG_genes$qval)][1:1000]
+```
+
+```{r}
+HSMM_myo <- setOrderingFilter(HSMM_myo, HSMM_ordering_genes)
+#plot_ordering_genes(HSMM_myo) 
+
+HSMM_myo <- reduceDimension(HSMM_myo, max_components=2, method = 'DDRTree', norm_method = 'log') 
+
+HSMM_myo <- orderCells(HSMM_myo) 
+
+
+plot_cell_trajectory(HSMM_myo, color_by="cluster") + theme(legend.position="right")
+
+plot_cell_trajectory(HSMM_myo, color_by="Pseudotime") + theme(legend.position="right")
+
+plot_cell_trajectory(HSMM_myo, color_by="State") + facet_wrap(~State, nrow=1)
+
+plot_cell_trajectory(HSMM_myo, color_by="State") + facet_wrap(~Cluster, nrow=1)
+
+plot_cell_trajectory(HSMM_myo, color_by="State") + facet_wrap(~cluster, nrow=1)
+
+plot_cell_trajectory(HSMM_myo, color_by="cluster") + facet_wrap(~stim, nrow=1)
+
+```
+
+
