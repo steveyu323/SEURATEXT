@@ -2,7 +2,7 @@
 % Please edit documentation in R/DE_analysis.R
 \name{DiffOutput}
 \alias{DiffOutput}
-\title{DE.Each.Cluster}
+\title{DiffOutput}
 \usage{
 DiffOutput(metadata, clust.name, pair)
 }

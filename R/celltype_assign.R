@@ -119,7 +119,7 @@ Assign.Cell.Type = function(ref.markers,exp.markers) {
     # get the current marker genes and the corresponding logFC
     curr.exp.markers = as.data.frame(exp.markers %>% filter(sample == curr.sample & cluster == curr.clust) %>% select(c("gene","avg_logFC")))
     for (j in 1:nrow(curr.exp.markers)) {
-      print(curr.exp.markers$gene[j])
+      #print(curr.exp.markers$gene[j])
       temp.cell.type = ref.markers[ref.markers$gene == curr.exp.markers$gene[j],2]
       for (type in temp.cell.type) {
         score[type] = score[type] + curr.exp.markers$avg_logFC[j]

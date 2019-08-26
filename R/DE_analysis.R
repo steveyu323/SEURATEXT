@@ -16,12 +16,10 @@ Build.Seurat.Cluster = function(seurat.ob) {
   seurat.ob <- ScaleData(seurat.ob, verbose = T)
   seurat.ob <- RunPCA(seurat.ob, npcs = 30, verbose = T)
   # t-SNE and Clustering
-  seurat.ob <- RunUMAP(seurat.ob, reduction = "pca", dims = 1:30)
-  seurat.ob <-
-    FindNeighbors(seurat.ob, reduction = "pca", dims = 1:30)
+  seurat.ob <- RunUMAP(seurat.ob, reduction = "pca",dims = 1:20)
+  seurat.ob <- FindNeighbors(seurat.ob, reduction = "pca",dims = 1:20)
   seurat.ob <- FindClusters(seurat.ob, resolution = 0.6)
 }
-
 
 
 #'  Build.ConserveMarkers.All
@@ -32,21 +30,45 @@ Build.Seurat.Cluster = function(seurat.ob) {
 Build.ConserveMarkers.All = function(seurat.ob) {
   Idents(seurat.ob) = seurat.ob$seurat_clusters
   max.clust.num = length(levels(seurat.ob$seurat_clusters)) - 1
-  markers = lapply(0:max.clust.num, function(x)
-    FindConservedMarkers(
-      seurat.ob,
-      ident.1 = x,
-      group = "stim",
-      verbose = T
-    ))
+  markers = lapply(0:max.clust.num, function(x) FindConservedMarkers.flat(seurat.ob, ident.1 = x, group = "stim", verbose = T))
+  return(Flatten.Helper(markers))
+}
+
+#'  FindConservedMarkers.flat
+#' @description A helper function for finding conserve markers of a single cluster
+#' @param seurat.ob The seurat object with clustering information
+#' @return A datafrane with conserved element as a marker of a single cluster
+FindConservedMarkers.flat = function(seurat.ob, ident.1, group , verbose ) {
+  markers = tryCatch(
+    FindConservedMarkers(seurat.ob, ident.1, ident.2 = NULL, group = group, verbose = verbose),
+    error = function(e)
+    {
+      NA
+    }
+  )
   return(markers)
 }
 
-# FindConservedMarkers.flat = function(seurat.ob, ident.1, group , verbose ) {
-#   markers = FindConservedMarkers(seurat.ob, ident.1, grouping.var = group, verbose )
-#   markers$cluster = ident.1
-#   return(markers)
-# }
+#' Flatten.Helper
+#' @description A helper function to combine the dataframe list object into a single dataframe wiith cluster
+#' @param ob A object list of length = number of clusters, and each element is a dataframe of conserve markers
+#' @return A flattened conserve marker list ready for Shine.Out
+Flatten.Helper = function(ob) {
+  ob.flat = data.frame()
+  for (x in 1:length(ob)) {
+    temp = ob[[x]]
+    if (!is.na(temp)) {
+      temp$cluster = (x - 1)
+      temp = rownames_to_column(temp)
+    } else {
+      temp = data.frame(cluster = x - 1)
+    }
+    ob.flat = rbind.fill(ob.flat, temp)
+  }
+  return(ob.flat)
+}
+
+
 
 #'  FeaturePlot.All
 #' @description A wrapper function to plot the top-three condident markers
@@ -134,68 +156,71 @@ Find.Markers.Each = function(seurat.ob,
 #' @param pair a pair of conditions to be differentially analyzed in the
 #' corresponding "stim" field
 #' @return flattened list of differentially expressed genes table
-DE.Each.Cluster = function(seurat.ob, pair = NA) {
-  if (!is.na(pair)) {
+DE.Each.Cluster = function(seurat.ob,pair = NA) {
+  if(!is.na(pair)) {
     Idents(seurat.ob) = seurat.ob$stim
-    seurat.ob = SubsetData(seurat.ob, ident.use = pair)
+    seurat.ob = SubsetData(seurat.ob,ident.use = pair)
   }
 
   Idents(seurat.ob) = seurat.ob$seurat_clusters
-  seurat.ob$celltype.stim <-
-    paste(Idents(seurat.ob), seurat.ob$stim, sep = "_")
+  seurat.ob$celltype.stim <- paste(Idents(seurat.ob), seurat.ob$stim, sep = "_")
   seurat.ob$celltype <- Idents(seurat.ob)
   Idents(seurat.ob) <- "celltype.stim"
 
   max.clust.num = length(levels(seurat.ob$seurat_clusters)) - 1
-  diff.out = lapply(0:max.clust.num, function(x)
-    DiffOutput(seurat.ob, x, pair))
+  diff.out = lapply(0:max.clust.num,function(x) DiffOutput(seurat.ob,x,pair))
   return(rbind_list(diff.out))
 }
 
 
-#'  DE.Each.Cluster
+#'  DiffOutput
 #' @description Helper function for DE.Each.Cluster
-DiffOutput = function(metadata, clust.name, pair) {
+# A function to output significantly differential but also widely present genes in the cluster
+DiffOutput = function(metadata,clust.name,pair) {
   if (is.na(pair)) {
-    pair = c("CTRL", "STIM")
+    pair = c("CTRL","STIM")
   }
-  id.1 = paste0(clust.name, '_', pair[1])
-  id.2 = paste0(clust.name, '_', pair[2])
+  id.1 = paste0(clust.name,'_',pair[1])
+  id.2 = paste0(clust.name,'_',pair[2])
   proceed.1 = tryCatch(
-    WhichCells(metadata, idents = id.1),
+    WhichCells(metadata,idents = id.1),
     error = function(e)
     {
       NA
     }
   )
   proceed.2 = tryCatch(
-    WhichCells(metadata, idents = id.2),
+    WhichCells(metadata,idents = id.2),
     error = function(e)
     {
       NA
     }
   )
-  if ((!is.na(proceed.1)) & (!is.na(proceed.2))) {
-    clust.diff <-
-      FindMarkers(
-        metadata,
-        ident.1 = id.1,
-        ident.2 = id.2,
-        verbose = T
-      )
-    clust.diff = rownames_to_column(clust.diff, "gene")
-    clust.diff$cluster = clust.name
-    clust.diff = clust.diff %>% filter(pct.1 > 0.2  & pct.2 > 0.2)
-    return(clust.diff)
+  if((!is.na(proceed.1)) & (!is.na(proceed.2))) {
+    proceed.3  = tryCatch(
+      FindMarkers(metadata, ident.1 = id.1, ident.2 = id.2, verbose = T),
+      error = function(e)
+      {
+        NA
+      }
+    )
+    if(!is.na(proceed.3)) {
+      clust.diff <- FindMarkers(metadata, ident.1 = id.1, ident.2 = id.2, verbose = T)
+      clust.diff = rownames_to_column(clust.diff, "gene")
+      clust.diff$cluster = clust.name
+      return(clust.diff)
+    }
   }
 }
 
-#'  DE.Each.Cluster
-#' @description A wrapper function to output: For each anchored cluster
-#' output the differentially expressed gene between a pair
-#' @param seurat.ob The seurat object with clustering information
-#' @param pair a pair of conditions to be differentially analyzed in the
-#' corresponding "stim" field
+
+
+#'Shine.Out
+#' @description A function to output a seurat.out object for ShinyApp visualization
+#' @param ob the seurat object
+#' @param  diff the differentially expressed genes of each cluster
+#' @param  markers.each the markers for each condition per cluster
+#' @param  markers.conserved the marker for conserved across conditions per cluster
 #' @param multiple a logical boolean on with there are more than 2 conditions,
 #' default to FALSE. If FALSE, the condition must be indicated as "CTRL" and
 #' "STIM"

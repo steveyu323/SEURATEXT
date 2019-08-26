@@ -215,7 +215,7 @@ Plot.Cluster.Percentage = function(seurat.ob,grouped = F,multi = NA) {
     dat.sum = rownames_to_column(as.data.frame(summary(seurat.ob$seurat_clusters)))
     colnames(dat.sum) = c('name','value')
     dat.sum$value = dat.sum$value/sum(dat.sum$value)
-    p = ggplot(dat = dat.sum,aes(x = name,y = value)) + geom_bar(stat ='identity') + ylim(0, 0.5)
+    p = ggplot(dat = dat.sum,aes(x = name,y = value)) + geom_bar(stat ='identity') + ylim(0, 1)
   }
   return(p)
 }

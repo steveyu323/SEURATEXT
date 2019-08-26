@@ -2,25 +2,27 @@
 % Please edit documentation in R/DE_analysis.R
 \name{Shine.Out}
 \alias{Shine.Out}
-\title{DE.Each.Cluster}
+\title{Shine.Out}
 \usage{
 Shine.Out(ob, diff, markers.each, markers.conserved, multiple = F)
 }
 \arguments{
+\item{ob}{the seurat object}
+
+\item{diff}{the differentially expressed genes of each cluster}
+
+\item{markers.each}{the markers for each condition per cluster}
+
+\item{markers.conserved}{the marker for conserved across conditions per cluster}
+
 \item{multiple}{a logical boolean on with there are more than 2 conditions,
 default to FALSE. If FALSE, the condition must be indicated as "CTRL" and
 "STIM"}
-
-\item{seurat.ob}{The seurat object with clustering information}
-
-\item{pair}{a pair of conditions to be differentially analyzed in the
-corresponding "stim" field}
 }
 \value{
 A seurat out object that can be used for input into app.R for
 ShinyApp visualization
 }
 \description{
-A wrapper function to output: For each anchored cluster
-output the differentially expressed gene between a pair
+A function to output a seurat.out object for ShinyApp visualization
 }

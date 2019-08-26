@@ -6,28 +6,28 @@ Author: Changhua Yu
 Maintainer: Changhua Yu <steveyu323@gmail.com>
 Description: The package aims to extend the functionality of Seurat package for 
     the general biological science community to address a variety of downstream 
-    analysis. Specifically, the package aims to address followingbiological 
+    analysis. Specifically, the package aims to address following biological 
     question related to single cell sequencing data:
     1) In Silico simulation of cell cytometry based on two cell markers of 
     interest. It is always necessary but tiring to inspect and separate out 
     different cell types within the sc-seq data to perform downstream analysis
     or reclustering. The cell cytometry module is designed to take in a 
-    seurat V3.0 object and inspect whether the 2 selected markers could 
+    Seurat V3.0 object and inspect whether the 2 selected markers could 
     well-separate cell populations into four quadrants. The user can then assign
     cells into four quadrants based on the 2 markers and user-defined threshold
     for the presence of the markers. A quadrant graph for population 
     distribution and a quadrant graph for mapping back to the Seurat UMAP 
     Dimplot can be plotted.The user could easily extract out a specific 
-    quandrant of cell to build a new seurat object containing only the desired 
+    quadrant of cell to build a new seurat object containing only the desired 
     cells for downstream reclustering/analysis.The pipeline imitates a flow 
     cytometry process to select out the desired cluster of cells for later use 
     based on unique cell markers, and is especially helpful when conducting 
     research on immune cell populations.
     2) Automated Cell Type identification based on reference table. 
     Currently, researchers widely proceed identification of cell type of the 
-    sub-populations in clustering results manually using emperical knowledge.
-    However, the lack of comprehensive knowlegde the labour related to the 
-    process is tedious. The package provided a efficient algorithm for 
+    sub-populations in clustering results manually using empirical knowledge.
+    However, the lack of comprehensive knowledge the labour related to the 
+    process is tedious. The package provided an efficient algorithm for 
     identification of cell types based on a given reference table of cell
     markers available online, and the user can apply a customized marker
     table for the identification
@@ -36,11 +36,11 @@ Description: The package aims to extend the functionality of Seurat package for
     table of gene of interests with fold change and statistical significance,
     and Differential expression plots such as violin plot. The package aims to
     resolve the intricacy and inconvenience while inspecting DE data through
-    an interactive ShinyApp integrating botn clustering plot, marker genes,
+    an interactive ShinyApp integrating both clustering plot, marker genes,
     cell population, and differential expression. 
     4) Extension and Customization module on CellPhoneDB outputs.
     CellPhoneDB is a powerful tool that has gained popularity to inspect 
-    intercellular ligand-receptor interaction. However, the online server itself
+    inter-cellular ligand-receptor interaction. However, the online server itself
     does not come with functions to filter out undesired clusters and to plot
     the cell type interaction graph using Cytoscape. The package will provide
     detailed tutorial on building a publishable intercellular interaction graph,
