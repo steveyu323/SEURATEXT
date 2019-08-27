@@ -6,31 +6,37 @@ output: html_document
 ---
 ## separate ctrl and stim (WT and KI) condition and run cellphonedb respectively
 
+
 ```{r}
-source('cellphone_util.R')
-source('cellphone_dotplot.R')
-source('cellphone_heat.R')
+source('../cellphone/cellphone_util.R')
+source('../cellphone/cellphone_dotplot.R')
+source('../cellphone/cellphone_heat.R')
 library("stringr")
 ```
 
+### Read in a Seurat_out object
 ```{r}
-seurat.out.pos = readRDS('./Shiny_diff_0808/input/WTKICD45POS_out.rds')
+getwd()
+seurat.out.pos = readRDS('../ShinyDiff_multi/input/WTKICD45POS_out.rds')
 seurat.out.pos = seurat.out.pos$ob
+```
 
-count.pos = Output.Count(seurat.out.pos,filt = seq(0,20),multi = c("kii","kini","wni","wti"))
+### Setup the four conditions used 
+```{r}
+conditions = c("kii","kini","wni","wti")
+```
 
-meta.pos = Output.Meta(seurat.out.pos,filt = seq(0,20),annotations = c("B","T","neutrophil","B","macrophage","T","T","NCMC","macrophage","T","NK","DC","DC","ILC2","Proliferation","neutrophil","micropglia","macrophage","NCMC","macrophage","macrophage"), multi = c("kii","kini","wni","wti"))
+### Extract the information needed from the table
+```{r}
+count.pos = Output.Count(seurat.out.pos,filt = seq(0,20),multi = conditions)
 
+meta.pos = Output.Meta(seurat.out.pos,filt = seq(0,20),annotations = c("B","T","neutrophil","B","macrophage","T","T","NCMC","macrophage","T","NK","DC","DC","ILC2","Proliferation","neutrophil","micropglia","macrophage","NCMC","macrophage","macrophage"), multi = conditions)
 ```
 
 ```{r}
-seurat.out.neg = readRDS('./Shiny_diff_0808/input/WTKICD45NEG_out.rds')
-seurat.out.neg = seurat.out.neg$ob
-
-count.neg = Output.Count(seurat.out.neg,filt = seq(0,16),multi = c("kii","kini","wni","wti"))
-
-meta.neg = Output.Meta(seurat.out.neg,filt = seq(0,16),annotations = c("endothelial","endothelial","endothelial","epithelial","pericyte","fibroblast","fibroblast","endothelial","endothelial","endothelial","epithelial","epithelial","fibroblast","epi_endo","endothelial","pericyte","fibroblast"), multi = c("kii","kini","wni","wti"))
-
+head(count.pos$kii)
+head(count.pos$kini)
+head(meta.pos$kini)
 ```
 
 
@@ -60,6 +66,13 @@ for (i in 1:length(multi)) {
 }
 
 ```
+
+1. open terminal
+2. source cpdb-venv/bin/activate
+3. cellphonedb method statistical_analysis test_meta.txt test_counts.txt 
+4. cellphonedb plot dot_plot --rows in/rows.txt --columns in/columns.txt
+5. cellphonedb plot heatmap_plot yourmeta.txt
+
 
 
 ```{r}

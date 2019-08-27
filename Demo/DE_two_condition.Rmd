@@ -1,0 +1,285 @@
+---
+title: "CD45POS_0816"
+author: "Changhua Yu"
+date: "8/16/2019"
+output: html_document
+---
+
+
+```{r}
+library(dplyr)
+library(Seurat)
+library(purrr)
+library(cowplot)
+library(parallel)
+library(roxygen2)
+library(reshape2)
+library(tibble)
+library(ggplot2)
+source('../R/celltype_assign.R')
+source('../R/cell_cytometry.R')
+source("../R/DE_analysis.R")
+```
+
+## Read in the Count matrix
+```{r}
+path1 = "../data/KO0531/"
+path2 = "../data/WT0531/"
+ko.mat = Read10X(data.dir = path1)
+wt.mat = Read10X(data.dir = path2)
+
+ctrl = CreateSeuratObject(counts = wt.mat, project = 'CTRL', min.cells = 3, min.features = 200)
+stim = CreateSeuratObject(counts = ko.mat, project = 'STIM', min.cells = 3, min.features = 200)
+```
+
+```{r}
+ctrl$stim = "CTRL"
+ctrl[["percent.mt"]] <- PercentageFeatureSet(ctrl, pattern = "^MT-|^mt")
+stim$stim = "STIM"
+stim[["percent.mt"]] <- PercentageFeatureSet(stim, pattern = "^MT-|^mt")
+```
+
+## Plot out mitochondria percent distribution
+```{r}
+plot1 <- FeatureScatter(ctrl, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(stim, feature1 = "nCount_RNA", feature2 = "percent.mt")
+CombinePlots(plots = list(plot1, plot2))
+```
+
+## Plot out nFeature distribution
+```{r}
+plot1 <- FeatureScatter(ctrl, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot2 <- FeatureScatter(stim, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+CombinePlots(plots = list(plot1, plot2))
+```
+
+## Filter out abnormal cells
+> Based on the mt percent distribution and nFeature distribution
+
+```{r}
+ctrl <- subset(ctrl, subset = nFeature_RNA > 500 & nFeature_RNA < 6000 & percent.mt < 25)
+print(ctrl)
+
+stim <- subset(stim, subset = nFeature_RNA > 500 & nFeature_RNA < 6000 & percent.mt < 25)
+print(stim)
+```
+
+```{r}
+ctrl <- NormalizeData(ctrl, normalization.method = "LogNormalize", scale.factor = 10000)
+ctrl <- FindVariableFeatures(ctrl, selection.method = "vst", nfeatures = 2500)
+
+stim <- NormalizeData(stim, normalization.method = "LogNormalize", scale.factor = 10000)
+stim <- FindVariableFeatures(stim, selection.method = "vst", nfeatures = 2500)
+```
+
+## Integrate two sample together
+```{r}
+immune.anchors <- FindIntegrationAnchors(object.list = list(ctrl, stim))
+immune.combined <- IntegrateData(anchorset = immune.anchors)
+```
+
+
+## Proceed the anchored clustering 
+```{r}
+DefaultAssay(immune.combined) <- "integrated"
+# Run the standard workflow for visualization and clustering
+immune.combined <- ScaleData(immune.combined, verbose = FALSE)
+immune.combined <- RunPCA(immune.combined, npcs = 30, verbose = FALSE)
+# t-SNE and Clustering
+immune.combined <- RunUMAP(immune.combined, reduction = "pca",dims = 1:15)
+immune.combined <- FindNeighbors(immune.combined, reduction = "pca",dims = 1:15)
+immune.combined <- FindClusters(immune.combined, resolution = 0.6)
+```
+
+
+## Visualizing UMAP clustering
+```{r}
+p1 <- DimPlot(immune.combined, reduction = "umap", group.by = "stim")
+p2 <- DimPlot(immune.combined, reduction = "umap", label = TRUE)
+plot_grid(p1, p2)
+DimPlot(immune.combined, reduction = "umap", split.by = "stim",label = T)
+```
+
+## In Silico Cytometry with Cd3e and Adgre1
+```{r}
+immune.combined.cyto.Adgre1 = Build.Cyto(immune.combined,"Cd3e","Adgre1",x.thresh = 0.1,y.thresh = 0.1)
+Plot.Cyto.Count(seurat.ob = immune.combined.cyto.Adgre1,
+                x= "Cd3e",
+                y = "Adgre1",split = T)
+```
+
+```{r}
+p = Plot.Cyto.Cluster(seurat.ob = immune.combined.cyto.Adgre1,
+                      x= "Cd3e",
+                      y = "Adgre1",split = T)
+plot_grid(p$ctrl,p$stim,labels = c('CTRL','STIM'))
+```
+
+## In Silico Cytometry with Cd3e and Cd68
+```{r}
+immune.combined.cyto.cd68 = Build.Cyto(immune.combined,"Cd3e","Cd68",x.thresh = 0.1,y.thresh = 0.1)
+Plot.Cyto.Count(seurat.ob = immune.combined.cyto.cd68,
+                x= "Cd3e",
+                y = "Cd68",split = T)
+```
+
+```{r}
+p = Plot.Cyto.Cluster(seurat.ob = immune.combined.cyto.cd68,
+                      x= "Cd3e",
+                      y = "Cd68",split = T)
+plot_grid(p$ctrl,p$stim,labels = c('CTRL','STIM'))
+```
+
+## Extract out the macrophage population for reclustering
+```{r}
+macrophage = Recluster.Quadrant(immune.combined.cyto.cd68,n.quadrant = 4)
+DefaultAssay(macrophage) <- "integrated"
+macrophage <- RunPCA(macrophage, npcs = 30, verbose = FALSE)
+# t-SNE and Clustering
+macrophage <- RunUMAP(macrophage, reduction = "pca",dims = 1:15)
+macrophage <- FindNeighbors(macrophage, reduction = "pca",dims = 1:15)
+macrophage <- FindClusters(macrophage, resolution = 0.6)
+```
+
+```{r}
+p1 <- DimPlot(macrophage, reduction = "umap", group.by = "stim")
+p2 <- DimPlot(macrophage, reduction = "umap", label = TRUE)
+plot_grid(p1, p2)
+```
+
+```{r}
+DimPlot(macrophage, reduction = "umap", split.by = "stim",label = T)
+```
+
+
+## Build the markers for ShinyApp output
+```{r eval=FALSE}
+macrophage.markers <- Build.ConserveMarkers.All(macrophage)
+macrophage.markers.each = Find.Markers.Each(macrophage)
+macrophage.diff = DE.Each.Cluster(macrophage)
+macrophage.out = Shine.Out(ob = macrophage, diff = macrophage.diff, markers.each = macrophage.markers.each, markers.conserved = macrophage.markers.flat)
+```
+
+```{r eval=FALSE}
+saveRDS(object = macrophage.out,file = './Shiny_diff/input/macrophage_out_0820_0531.rds')
+```
+
+## Extract out the population that is cd3e-/cd68-
+```{r}
+other = Recluster.Quadrant(immune.combined.cyto.cd68,n.quadrant = 3)
+DefaultAssay(other) <- "integrated"
+other <- RunPCA(other, npcs = 30, verbose = FALSE)
+# t-SNE and Clustering
+other <- RunUMAP(other, reduction = "pca",dims = 1:15)
+other <- FindNeighbors(other, reduction = "pca",dims = 1:15)
+other <- FindClusters(other, resolution = 0.6)
+```
+
+```{r}
+p1 <- DimPlot(other, reduction = "umap", group.by = "stim")
+p2 <- DimPlot(other, reduction = "umap", label = TRUE)
+plot_grid(p1, p2)
+```
+
+```{r}
+DimPlot(other, reduction = "umap", split.by = "stim",label = T)
+```
+
+## Build the markers for ShinyApp output
+```{r eval=FALSE}
+other.markers = Build.ConserveMarkers.All(other)
+other.markers.each <- Find.Markers.Each(other)
+other.diff = DE.Each.Cluster(other)
+other.out = Shine.Out(ob = other, diff = other.diff, markers.each = other.markers.each,markers.conserved = other.markers.flat)
+```
+
+```{r eval=FALSE}
+saveRDS(object = other.out,file = './Shiny_diff/input/other_out_0820_0531.rds')
+```
+
+
+## Extract out the population that is T Cell
+```{r}
+Tcell = Recluster.Quadrant(immune.combined.cyto.cd68,n.quadrant = 2)
+DefaultAssay(Tcell) <- "integrated"
+Tcell <- RunPCA(Tcell, npcs = 30, verbose = FALSE)
+# t-SNE and Clustering
+Tcell <- RunUMAP(Tcell, reduction = "pca",dims = 1:15)
+Tcell <- FindNeighbors(Tcell, reduction = "pca",dims = 1:15)
+Tcell <- FindClusters(Tcell, resolution = 0.6)
+```
+
+
+```{r}
+p1 <- DimPlot(Tcell, reduction = "umap", group.by = "stim")
+p2 <- DimPlot(Tcell, reduction = "umap", label = TRUE)
+plot_grid(p1, p2)
+```
+
+```{r}
+DimPlot(Tcell, reduction = "umap", split.by = "stim",label = T)
+```
+
+## Expore the ShinyApp output for T Cell
+```{r eval=FALSE}
+T.markers = Build.ConserveMarkers.All(Tcell)
+T.markers.each <- Find.Markers.Each(Tcell)
+T.diff = DE.Each.Cluster(Tcell)
+T.out = Shine.Out(ob = Tcell, diff = T.diff, markers.each = T.markers.each,markers.conserved = T.markers.flat)
+```
+
+```{r eval=FALSE}
+saveRDS(object = T.out,file = './Shiny_diff/input/T_out_0820.rds')
+```
+
+
+## Build a cytometry object with CD8 and CD4 as axes
+
+```{r}
+DefaultAssay(Tcell) <- "RNA"
+p = Plot.FeatureScatter(Tcell, x = 'Cd8a', y = 'Cd4')
+p
+```
+
+```{r}
+Tcell.cyto = Build.Cyto(Tcell,x = 'Cd8a', y = 'Cd4',x.thresh = 0,y.thresh = 0)
+Plot.Cyto.Count(seurat.ob = Tcell.cyto,x = 'Cd8a', y = 'Cd4',split = T)
+p = Plot.Cyto.Cluster(seurat.ob = Tcell.cyto,x = 'Cd8a', y = 'Cd4',split = T)
+plot_grid(p$ctrl,p$stim,labels = c('CTRL','STIM'))
+```
+
+## Extract the cd8, cd4 and double negative population
+```{r}
+cd8 = Recluster.Quadrant(Tcell.cyto,n.quadrant = 2)
+cd4 = Recluster.Quadrant(Tcell.cyto,n.quadrant = 4)
+dn = Recluster.Quadrant(Tcell.cyto,n.quadrant = 3)
+```
+
+## Perform reclustering of the 3 subpopulations
+```{r}
+DefaultAssay(cd8) <- "integrated"
+DefaultAssay(cd4) <- "integrated"
+DefaultAssay(dn) <- "integrated"
+cd8 = Build.Seurat.Cluster(cd8)
+cd4 = Build.Seurat.Cluster(cd4)
+dn = Build.Seurat.Cluster(dn)
+```
+
+```{r}
+DimPlot(cd8, reduction = "umap", split.by = "stim",label = T)
+DimPlot(cd4, reduction = "umap", split.by = "stim",label = T)
+DimPlot(dn, reduction = "umap", split.by = "stim",label = T)
+```
+
+### Store the ShinyApp output of desired sub population (CD8)
+```{r eval=FALSE}
+cd8.markers <- Build.ConserveMarkers.All(cd8)
+cd8.markers.each = Find.Markers.Each(cd8)
+cd8.diff = DE.Each.Cluster(cd8)
+cd8.out = Shine.Out(ob = cd8, diff = cd8.diff, markers.each = cd8.markers.each, markers.conserved = cd8.markers.flat)
+```
+
+```{r eval=FALSE}
+saveRDS(object = cd8.out,file = './Shiny_diff/input/cd8_out_0820.rds')
+```
+

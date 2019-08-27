@@ -23,6 +23,7 @@ head(atlas_markers)
 ### Reading Seurat Output Used also as ShinyApp interactive session input 
 ```{r}
 seurat.out.neg = readRDS('../ShinyDiff_multi/input/WTKICD45NEG_out.rds')
+seurat.out.neg$conserved.markers
 ```
 
 ### Build the experimental marker from conserved marker list of seurat output
